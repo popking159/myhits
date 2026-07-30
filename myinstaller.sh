@@ -3,18 +3,18 @@
 # =========================================================================
 # CONFIGURATION (Change these for different repositories)
 # =========================================================================
-PLUGIN_NAME="MyWebUIController"
+PLUGIN_NAME="MyHits"
 USERNAME="popking159"
-REPO="mywebuicontroller"
+REPO="myhits"
 
 # 1. PYTHON DEPENDENCIES (Write only the core module names without prefixes)
 # The script automatically adds 'python-' for Py2 or 'python3-' for Py3.
 # Leave empty "" if the plugin doesn't need any Python dependencies.
-PY_DEPENDS="requests core compression difflib json six twisted-web"
+PY_DEPENDS="core compression html crypt"
 
 # 2. SYSTEM DEPENDENCIES (Binary utilities installed exactly as written, e.g., unrar)
 # Leave empty "" if none are needed.
-SYS_DEPENDS=""
+SYS_DEPENDS="ffmpeg"
 # =========================================================================
 
 # Dynamically construct the download link
