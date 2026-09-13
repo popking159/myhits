@@ -112,7 +112,6 @@ PLUGIN_URL="https://github.com/${USERNAME}/${REPO}/raw/refs/heads/main/${IPK_NAM
 TMP_FILE="$TMP_DIR/$IPK_NAME"
 
 log "[INFO] Target Package: $IPK_NAME"
-log "[INFO] Download Link: $PLUGIN_URL"
 
 # 5. Update Package Feeds
 log "[INFO] Updating package feeds..."
