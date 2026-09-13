@@ -1,34 +1,24 @@
 #!/bin/sh
 
+# =========================================================================
+# One-liner execution command:
 # wget -qO - https://raw.githubusercontent.com/popking159/myhits/refs/heads/main/myinstaller.sh | /bin/sh
 # =========================================================================
-# CONFIGURATION (Change these for different repositories)
-# =========================================================================
+
 PLUGIN_NAME="MyHits"
+PKG_BASE="enigma2-plugin-extensions-myhits"
+VERSION="1.1.0"
 USERNAME="popking159"
 REPO="myhits"
-
-# 1. PYTHON DEPENDENCIES (Write only the core module names without prefixes)
-# The script automatically adds 'python-' for Py2 or 'python3-' for Py3.
-# Leave empty "" if the plugin doesn't need any Python dependencies.
-PY_DEPENDS="core compression html crypt"
-
-# 2. SYSTEM DEPENDENCIES (Binary utilities installed exactly as written, e.g., unrar)
-# Leave empty "" if none are needed.
-SYS_DEPENDS="ffmpeg"
-# =========================================================================
-
-# Dynamically construct the download link
-PLUGIN_URL="https://github.com/${USERNAME}/${REPO}/raw/refs/heads/main/main.tar.gz"
 
 # Workspace paths
 TMP_DIR="/var/volatile/tmp"
 [ -d "$TMP_DIR" ] || TMP_DIR="/tmp"
-TMP_FILE="$TMP_DIR/main_install.tar.gz"
 
 PKG_MANAGER=""
 PYTHON_VERSION=""
-FINAL_DEPENDS=""
+PY_VER=""
+ARCH=""
 
 log() {
     echo "$1"
@@ -38,126 +28,146 @@ has_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
-is_pkg_installed() {
-    pkg="$1"
-    if [ "$PKG_MANAGER" = "opkg" ]; then
-        if [ -f /var/lib/opkg/status ]; then
-            grep -q "^Package: $pkg$" /var/lib/opkg/status && return 0
-        fi
-        opkg list-installed 2>/dev/null | grep -q "^$pkg[[:space:]-]" && return 0
-        return 1
-    fi
-
-    if [ "$PKG_MANAGER" = "apt" ]; then
-        dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" && return 0
-        return 1
-    fi
-    return 1
-}
-
-restart_enigma2() {
-    log "[INFO] Restarting Enigma2 UI..."
-    sleep 2
-    if [ -f /usr/bin/systemctl ]; then
-        systemctl restart enigma2
-    else
-        init 4 && sleep 2 && init 3 || killall -9 enigma2 >/dev/null 2>&1
-    fi
-}
-
 echo "===================================================="
-echo "         $PLUGIN_NAME INSTALLER UTILITY            "
+echo "         $PLUGIN_NAME IPK INSTALLER                 "
+echo "                 by MNASR                           "
 echo "===================================================="
 
-# 1. Detect Environment & Python Version
+# 1. Detect Package Manager
 if has_cmd opkg; then
     PKG_MANAGER="opkg"
 elif has_cmd apt-get; then
     PKG_MANAGER="apt"
+else
+    log "[ERROR] No supported package manager (opkg/apt) found!"
+    exit 1
 fi
-log "[INFO] Package manager detected: ${PKG_MANAGER:-None}"
+log "[INFO] Package manager detected: ${PKG_MANAGER}"
 
+# 2. Detect Python Version
 if has_cmd python3; then
     PYTHON_VERSION="3"
-    PY_PREFIX="python3-"
+    PY_VER=$(python3 -c 'import sys; print("%d.%d" % (sys.version_info.major, sys.version_info.minor))' 2>/dev/null)
 elif has_cmd python; then
     PYTHON_VERSION="2"
-    PY_PREFIX="python-"
+    PY_VER=$(python -c 'import sys; print("%d.%d" % (sys.version_info.major, sys.version_info.minor))' 2>/dev/null)
 fi
-log "[INFO] Detected Python Environment: Python $PYTHON_VERSION"
 
-# 2. Build the Final Dependency List based on Python version
-for dep in $PY_DEPENDS; do
-    FINAL_DEPENDS="$FINAL_DEPENDS ${PY_PREFIX}${dep}"
-done
-for dep in $SYS_DEPENDS; do
-    FINAL_DEPENDS="$FINAL_DEPENDS $dep"
-done
-
-# 3. Update Package Feeds (Only if dependencies are requested)
-if [ -n "$FINAL_DEPENDS" ] && [ -n "$PKG_MANAGER" ]; then
-    if [ "$PKG_MANAGER" = "opkg" ]; then
-        log "[INFO] Updating opkg feeds..."
-        opkg update >/dev/null 2>&1 || log "[WARN] opkg update failed, continuing..."
-    elif [ "$PKG_MANAGER" = "apt" ]; then
-        log "[INFO] Updating apt feeds..."
-        apt-get update >/dev/null 2>&1 || log "[WARN] apt update failed, continuing..."
+# Fallback for Python version from enigma.info
+if [ -z "$PY_VER" ] && [ -f /usr/lib/enigma.info ]; then
+    PY_VER_RAW=$(grep "^python=" /usr/lib/enigma.info | cut -d"=" -f2 | tr -d "'\"")
+    if [ -n "$PY_VER_RAW" ]; then
+        PY_VER=$(echo "$PY_VER_RAW" | cut -d"." -f1,2)
     fi
 fi
 
-# 4. Check and Download Dependencies (Strict Mode)
-if [ -n "$FINAL_DEPENDS" ]; then
-    log "[INFO] Verifying required dependencies..."
-    for pkg in $FINAL_DEPENDS; do
-        if is_pkg_installed "$pkg"; then
-            log "[OK] Already installed: $pkg"
-        else
-            log "[INFO] Downloading and installing: $pkg"
-            if [ "$PKG_MANAGER" = "opkg" ]; then
-                opkg install "$pkg" >/dev/null 2>&1
-            elif [ "$PKG_MANAGER" = "apt" ]; then
-                DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" >/dev/null 2>&1
-            fi
-            
-            # Strict Verification: If it failed to install, abort immediately
-            if is_pkg_installed "$pkg"; then
-                log "[OK] Successfully installed: $pkg"
-            else
-                log "[ERROR] Required dependency '$pkg' could not be installed! Aborting setup."
-                exit 1
-            fi
-        fi
-    done
-else
-    log "[INFO] No dependencies specified in configuration. Skipping dependency phase."
+log "[INFO] Detected Python Version: Python $PY_VER"
+
+# 3. Detect STB Architecture
+if [ -f /usr/lib/enigma.info ]; then
+    INFO_ARCH=$(grep "^architecture=" /usr/lib/enigma.info | cut -d"=" -f2 | tr -d "'\"")
+    case "$INFO_ARCH" in
+        cortexa15hf-neon-vfpv4|armv7ahf-neon|aarch64)
+            ARCH="$INFO_ARCH"
+            ;;
+    esac
 fi
 
-# 5. Download Plugin Archive
-log "[INFO] Downloading main plugin tree archive..."
+if [ -z "$ARCH" ] && [ -f /etc/opkg/arch.conf ]; then
+    if grep -q "cortexa15hf-neon-vfpv4" /etc/opkg/arch.conf; then
+        ARCH="cortexa15hf-neon-vfpv4"
+    elif grep -q "armv7ahf-neon" /etc/opkg/arch.conf; then
+        ARCH="armv7ahf-neon"
+    elif grep -q "aarch64" /etc/opkg/arch.conf; then
+        ARCH="aarch64"
+    fi
+fi
+
+if [ -z "$ARCH" ]; then
+    UNAME_M=$(uname -m)
+    case "$UNAME_M" in
+        aarch64|arm64)
+            ARCH="aarch64"
+            ;;
+        armv7l|arm*)
+            ARCH="cortexa15hf-neon-vfpv4"
+            ;;
+    esac
+fi
+
+log "[INFO] Detected Architecture: ${ARCH:-Unknown}"
+
+case "$ARCH" in
+    cortexa15hf-neon-vfpv4|armv7ahf-neon|aarch64)
+        ;;
+    *)
+        log "[ERROR] Unsupported STB architecture: '$ARCH'. Aborting installation."
+        exit 1
+        ;;
+esac
+
+# 4. Construct IPK File Name and Download URL
+IPK_NAME="${PKG_BASE}_${VERSION}_${ARCH}_py${PY_VER}.ipk"
+PLUGIN_URL="https://github.com/${USERNAME}/${REPO}/raw/refs/heads/main/${IPK_NAME}"
+TMP_FILE="$TMP_DIR/$IPK_NAME"
+
+log "[INFO] Target Package: $IPK_NAME"
+log "[INFO] Download Link: $PLUGIN_URL"
+
+# 5. Update Package Feeds
+log "[INFO] Updating package feeds..."
+if [ "$PKG_MANAGER" = "opkg" ]; then
+    opkg update >/dev/null 2>&1 || log "[WARN] opkg update failed, attempting installation anyway..."
+elif [ "$PKG_MANAGER" = "apt" ]; then
+    apt-get update >/dev/null 2>&1 || log "[WARN] apt-get update failed, attempting installation anyway..."
+fi
+
+# 6. Download IPK Archive safely (Catch GitHub 404 HTML pages)
+log "[INFO] Downloading IPK package..."
 rm -f "$TMP_FILE"
-wget -q --no-check-certificate "$PLUGIN_URL" -O "$TMP_FILE"
 
-if [ ! -s "$TMP_FILE" ]; then
-    log "[ERROR] Download failed or file is empty!"
+if has_cmd wget; then
+    wget -q --no-check-certificate "$PLUGIN_URL" -O "$TMP_FILE"
+elif has_cmd curl; then
+    curl -s -k -L "$PLUGIN_URL" -o "$TMP_FILE"
+fi
+
+if [ ! -s "$TMP_FILE" ] || grep -q -i "<html" "$TMP_FILE" || grep -q "404: Not Found" "$TMP_FILE"; then
+    log "[ERROR] Download failed! The compiled package for $ARCH and Python $PY_VER does not exist on GitHub."
     rm -f "$TMP_FILE"
     exit 1
 fi
 
-# 6. Extract directly to ROOT (/)
-log "[INFO] Extracting payload contents to system paths..."
-tar -xzf "$TMP_FILE" -C /
+# 7. Install the IPK
+log "[INFO] Installing package..."
+if [ "$PKG_MANAGER" = "opkg" ]; then
+    opkg install --force-reinstall --force-overwrite "$TMP_FILE"
+elif [ "$PKG_MANAGER" = "apt" ]; then
+    dpkg -i "$TMP_FILE"
+    apt-get install -f -y
+fi
+
 if [ $? -ne 0 ]; then
-    log "[ERROR] Extraction failed!"
+    log "[ERROR] Installation failed!"
     rm -f "$TMP_FILE"
     exit 1
 fi
 
+# 8. Cleanup and Finalize
 rm -f "$TMP_FILE"
 sync
 
 echo "===================================================="
 echo "          $PLUGIN_NAME INSTALLATION COMPLETE        "
 echo "===================================================="
+echo "[INFO] Installed successfully for $ARCH (Python $PY_VER)."
 
-restart_enigma2
+# 9. Graceful Enigma2 Restart via OpenWebIF
+echo "[INFO] Restarting Enigma2 GUI to apply changes..."
+if has_cmd wget; then
+    wget -qO - "http://127.0.0.1/web/powerstate?newstate=3" >/dev/null 2>&1
+elif has_cmd curl; then
+    curl -s "http://127.0.0.1/web/powerstate?newstate=3" >/dev/null 2>&1
+fi
+
 exit 0
