@@ -7,7 +7,7 @@
 
 PLUGIN_NAME="MyHits"
 PKG_BASE="enigma2-plugin-extensions-myhits"
-VERSION="1.1.0"
+VERSION="1.2.0"
 USERNAME="popking159"
 REPO="myhits"
 
