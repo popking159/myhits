@@ -11,6 +11,13 @@ VERSION="1.4.0"
 USERNAME="popking159"
 REPO="myhits"
 
+# Terminal Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 # Workspace paths
 TMP_DIR="/var/volatile/tmp"
 [ -d "$TMP_DIR" ] || TMP_DIR="/tmp"
@@ -21,17 +28,24 @@ PY_VER=""
 ARCH=""
 
 log() {
-    echo "$1"
+    # Automatically colorize based on the log tag
+    case "$1" in
+        *\[INFO\]*) echo -e "${CYAN}$1${NC}" ;;
+        *\[OK\]*) echo -e "${GREEN}$1${NC}" ;;
+        *\[WARN\]*) echo -e "${YELLOW}$1${NC}" ;;
+        *\[ERROR\]*) echo -e "${RED}$1${NC}" ;;
+        *) echo -e "$1" ;;
+    esac
 }
 
 has_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
-echo "===================================================="
-echo "         $PLUGIN_NAME IPK INSTALLER                 "
-echo "                 by MNASR                           "
-echo "===================================================="
+echo -e "${GREEN}====================================================${NC}"
+echo -e "${GREEN}         $PLUGIN_NAME IPK INSTALLER                 ${NC}"
+echo -e "${GREEN}                  by MNASR                          ${NC}"
+echo -e "${GREEN}====================================================${NC}"
 
 # 1. Detect Package Manager
 if has_cmd opkg; then
@@ -113,15 +127,7 @@ TMP_FILE="$TMP_DIR/$IPK_NAME"
 
 log "[INFO] Target Package: $IPK_NAME"
 
-# 5. Update Package Feeds
-log "[INFO] Updating package feeds..."
-if [ "$PKG_MANAGER" = "opkg" ]; then
-    opkg update >/dev/null 2>&1 || log "[WARN] opkg update failed, attempting installation anyway..."
-elif [ "$PKG_MANAGER" = "apt" ]; then
-    apt-get update >/dev/null 2>&1 || log "[WARN] apt-get update failed, attempting installation anyway..."
-fi
-
-# 6. Download IPK Archive safely (Catch GitHub 404 HTML pages)
+# 5. Download IPK Archive safely (Catch GitHub 404 HTML pages)
 log "[INFO] Downloading IPK package..."
 rm -f "$TMP_FILE"
 
@@ -137,7 +143,7 @@ if [ ! -s "$TMP_FILE" ] || grep -q -i "<html" "$TMP_FILE" || grep -q "404: Not F
     exit 1
 fi
 
-# 7. Install the IPK
+# 6. Install the IPK
 log "[INFO] Installing package..."
 if [ "$PKG_MANAGER" = "opkg" ]; then
     opkg install --force-reinstall --force-overwrite "$TMP_FILE"
@@ -152,21 +158,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 8. Cleanup and Finalize
+# 7. Cleanup and Finalize
 rm -f "$TMP_FILE"
 sync
 
-echo "===================================================="
-echo "          $PLUGIN_NAME INSTALLATION COMPLETE        "
-echo "===================================================="
-echo "[INFO] Installed successfully for $ARCH (Python $PY_VER)."
-
-# 9. Graceful Enigma2 Restart via OpenWebIF
-echo "[INFO] Restarting Enigma2 GUI to apply changes..."
-if has_cmd wget; then
-    wget -qO - "http://127.0.0.1/web/powerstate?newstate=3" >/dev/null 2>&1
-elif has_cmd curl; then
-    curl -s "http://127.0.0.1/web/powerstate?newstate=3" >/dev/null 2>&1
-fi
+echo -e "${GREEN}====================================================${NC}"
+echo -e "${GREEN}          $PLUGIN_NAME INSTALLATION COMPLETE        ${NC}"
+echo -e "${GREEN}====================================================${NC}"
+log "[OK] Installed successfully for $ARCH (Python $PY_VER)."
 
 exit 0
